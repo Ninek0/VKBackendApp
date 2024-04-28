@@ -1,4 +1,3 @@
-import os
 from fastapi import FastAPI, Depends
 
 from typing import Annotated
@@ -13,11 +12,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 db = SessionLocal()
+
+# Создание приложения и добавление рутов
 app = FastAPI()
 app.include_router(user.router)
 app.include_router(note.router)
 
-
+# Создание бд и сущностей
 Base.metadata.create_all(bind=engine)
 
 def get_db():
@@ -27,4 +28,5 @@ def get_db():
     finally:
         db.close()
 
+# Создание инъекции бд
 db_dependency = Annotated[Session, Depends(get_db)]

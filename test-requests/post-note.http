@@ -1,9 +1,0 @@
-POST /note
-Host: 127.0.0.1:8000
-Content-Type: application/json
-token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJBbGluYSIsImlkIjoyLCJleHAiOjE3MTQyNDc2MTh9.w9is4eeSVUI5v2NFgm4UJSDKnoEy8EBkzoJXPHmcF04
-
-{
-  "title": "Alina",
-  "content": "Alina bila tut"
-}

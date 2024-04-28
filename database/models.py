@@ -3,8 +3,10 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
+# Базовая модель
 class Base(DeclarativeBase): pass
 
+# Модель пользователя
 class User(Base):
     __tablename__ = "users"
 
@@ -13,6 +15,7 @@ class User(Base):
     password = Column(String)
     notes = relationship("Note", back_populates="author")
 
+# Модель заметки
 class Note(Base):
     __tablename__ = "notes"
 
