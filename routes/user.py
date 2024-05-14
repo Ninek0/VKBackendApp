@@ -30,10 +30,25 @@ router = APIRouter(
     tags=['user']
 )
 
+class BaseResponse(BaseModel):
+    status_code: int
+    message: str
+
+class Token(BaseResponse):
+    access_token: str
+    token_type: str
+
 # тип данных для запроса
 class UserRequest(BaseModel):
     login: str
     password: str
+
+class AuthUserRequest(UserRequest, Token):
+    pass
+
+class UserResponse(Token):
+    user_login: str
+
 
 def get_db():
     db = SessionLocal()
@@ -52,21 +67,24 @@ async def registration(
     newUser: UserRequest):
     # проверяем логин пользователя и его пароль
     if len(newUser.login) < 5 or len(newUser.login) > 50:
-        return Response(
-            content=json.dumps({'error': 'Login length is incorrect'}),
-            status_code=status.HTTP_400_BAD_REQUEST)
+        return BaseResponse(
+            message='Login length is incorrect',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
     
     if len(newUser.password) < 5 or len(newUser.password) > 25:
-        return Response(
-            content=json.dumps({'error': 'Password length is incorrect'}),
-            status_code=status.HTTP_400_BAD_REQUEST)
+        return BaseResponse(
+            message='Password length is incorrect',
+            status_code=status.HTTP_400_BAD_REQUEST
+        ) 
     
     # проверяем существует ли пользователь с таким же логином
     alreadyExit = True if len(db.query(User).filter(User.login == newUser.login).all()) > 0 else False
     if alreadyExit:
-        return Response(
-            content=json.dumps({'error': 'Login already exists'}),
-            status_code=status.HTTP_409_CONFLICT)
+        return BaseResponse(
+            message='Login already exists',
+            status_code=status.HTTP_409_CONFLICT
+        )
     
     # создаем нового пользователя
     createNewUser = User(
@@ -84,22 +102,19 @@ async def registration(
         user_id=createNewUser.id, 
         expires_delta=timedelta(minutes=30))
     
-    return Response(
-        content=json.dumps(
-            {
-                'User created with: ': f'{createNewUser.id}',
-                'access_token: ': f'{token}',
-                'token_type': 'bearer'
-                }
-            )
-        )
+    return UserResponse(
+        message='User succesfuly created',
+        status_code=status.status.HTTP_201_CREATED,
+        user_login=createNewUser.login,
+        access_token=token,
+        token_type='bearer'
+    )
 
 # авторизация пользователя
 @router.post('/authorization')
 async def authorization(
     db: db_dependency,
     authUser: UserRequest):
-
     # получаем данные пользователя для авторизации
     # хэшируем введенный пароль пользователем
     hashedPassword = bcrypt_context.hash(authUser.password)
@@ -111,17 +126,18 @@ async def authorization(
     if userInDB:
         # создаем токен
         token = create_access_token(login=userInDB.login, user_id=userInDB.id, expires_delta=timedelta(minutes=30))
-        return Response(content=json.dumps({
-                            'message': 'Authorization successful',
-                            'access_token: ': f'{token}',
-                            'token_type': 'bearer'}),
-                        status_code=status.HTTP_200_OK)
+        return Token(
+            message='Authorization successful',
+            access_token=token,
+            token_type='bearer',
+            status_code=status.HTTP_200_OK
+        )
     # не нашелся (((
     else:
-        return Response(content=json.dumps({
-                            'error': 'Unauthorized',
-                            'message': 'Authorization failed. Please check your credentials'}),
-                        status_code=status.HTTP_401_UNAUTHORIZED)
+        return BaseResponse(
+            message='Authorization failed. Please check your credentials',
+            status_code=status.HTTP_401_UNAUTHORIZED
+        )
 
 # функция которая генерирует токен
 def create_access_token(login: str, user_id: int, expires_delta: timedelta):

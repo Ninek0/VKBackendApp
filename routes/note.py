@@ -21,8 +21,11 @@ router = APIRouter(
     tags=['note']
 )
 
+class AuthRequest(BaseModel):
+    access_token: str
+
 # Класс который описывает данные запроса связанных с заметками
-class NoteRequest(BaseModel):
+class AuthNoteRequest(AuthRequest):
     title: str
     content: str
 
@@ -33,6 +36,17 @@ def get_db():
     finally:
         db.close()
 
+class BaseResponse(BaseModel):
+    status_code: int
+    message: str
+
+class NoteResponse(BaseResponse):
+    note_title: str
+    note_content: str
+    created_at: str
+    author_id: int
+
+
 # Инъекция бд
 db_dependency = Annotated[Session, Depends(get_db)]
 
@@ -40,11 +54,10 @@ db_dependency = Annotated[Session, Depends(get_db)]
 @router.post('/create')
 def CreateNote(
     db: db_dependency,
-    request: Request, 
-    noteRequest: NoteRequest):
+    noteRequest: AuthNoteRequest):
 
     # берем токен из хэдера
-    token = request.headers.get('access_token')
+    token = noteRequest.access_token
     
     # Если токен есть то делаем дела
     if token:
@@ -54,10 +67,8 @@ def CreateNote(
             userInfo = jwt.decode(token,  os.getenv('SECRET_KEY'))
         except ExpiredSignatureError:
             # в случае если он просрочен то уведоляем пользователя об этом
-            return Response(
-                content=json.dumps({
-                    'message':'Access token has expired, please log in again'
-                }),
+            return BaseResponse(
+                message='Access token has expired, please log in again',
                 status_code=status.HTTP_401_UNAUTHORIZED
             )
         # проверяем ограничения названия и контента
@@ -66,12 +77,10 @@ def CreateNote(
             if db.query(Note).filter(
                 and_(Note.title == noteRequest.title,
                 Note.author_id == userInfo['user_id'])).first():
-                return Response(
-                content=json.dumps({
-                    'message':'Note with this title already exists',
-                }),
-                status_code=status.HTTP_409_CONFLICT
-            )
+                return BaseResponse(
+                    message='Note with this title already exists',
+                    status_code=status.HTTP_409_CONFLICT
+                )
             # дубликатов нет
             # создаем новую заметку
             createdNote = Note(
@@ -84,30 +93,24 @@ def CreateNote(
             db.commit()
             db.refresh(createdNote)
             # уведомляем о том, что заметка создана
-            return Response(
-                content=json.dumps({
-                    'message':'Note created',
-                    'note title': createdNote.title,
-                    'note content': createdNote.content,
-                    'created at': str(createdNote.created_at),
-                    'author id': createdNote.author_id
-                }),
-                status_code=status.HTTP_201_CREATED
+            return NoteResponse(
+                message='Note created',
+                status_code=status.HTTP_201_CREATED,
+                note_title=createdNote.title,
+                note_content=createdNote.content,
+                created_at=str(createdNote.created_at),
+                author_id=createdNote.author_id
             )
         # Ограничения на название и контент не выполнены
         else:
-            return Response(
-                        content=json.dumps({
-                            'message':'Incorrect note title or content',
-                        }),
+            return BaseResponse(
+                message='Incorrect note title or content',
                 status_code=status.HTTP_400_BAD_REQUEST
             )
     # а токена то нет, значит не можено создать заметку 
     else:
-        return Response(
-                content=json.dumps({
-                    'message':'Unauthorized user request'
-                }),
+        return BaseResponse(
+                message='Unauthorized user request',
                 status_code=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -115,20 +118,17 @@ def CreateNote(
 @router.post('/change')
 def UpdateNote(
     db: db_dependency,
-    request: Request, 
-    noteRequest: NoteRequest):
+    noteRequest: AuthNoteRequest):
 
-    token = request.headers.get('access_token')
+    token = noteRequest.access_token
     
     if token:
         userInfo: dict
         try:
             userInfo = jwt.decode(token, os.getenv('SECRET_KEY'))
         except ExpiredSignatureError:
-            return Response(
-                content=json.dumps({
-                    'message':'Access token has expired, please log in again'
-                }),
+            return BaseResponse(
+                message='Access token has expired, please log in again',
                 status_code=status.HTTP_401_UNAUTHORIZED
             )
         if 0 < len(noteRequest.title) < 25 and 0 < len(noteRequest.content) < 50:
@@ -140,10 +140,8 @@ def UpdateNote(
             if noteChange:
                 # проверям по времени
                 if datetime.now() - noteChange.created_at >= timedelta(hours=24):
-                    return Response(
-                        content=json.dumps({
-                            'message':'Time for note editing has expired',
-                        }),
+                    return BaseResponse(
+                        message='Time for note editing has expired',
                         status_code=status.HTTP_403_FORBIDDEN
                     )
                 # изменяем заметку
@@ -152,35 +150,27 @@ def UpdateNote(
                     noteChange.title = noteRequest.title
                     db.commit()
                     db.refresh(noteChange)
-                    return Response(
-                        content=json.dumps({
-                            'message':'Note created',
-                            'note title': noteChange.title,
-                            'note content': noteChange.content,
-                            'created at': str(noteChange.created_at),
-                            'author id': noteChange.author_id
-                        }),
-                status_code=status.HTTP_202_ACCEPTED
-            )
+                    return NoteResponse(
+                        message='Note changed',
+                        note_title=noteChange.title,
+                        note_content=noteChange.content,
+                        created_at=str(noteChange.created_at),
+                        author_id=noteChange.author_id,
+                        status_code=status.HTTP_202_ACCEPTED
+                    )
             else:
-                return Response(
-                    content=json.dumps({
-                        'message':'Note not found',
-                    }),
+                return BaseResponse(
+                    message='Note not found',
                     status_code=status.HTTP_404_NOT_FOUND
                 )
         else:
-            return Response(
-                        content=json.dumps({
-                            'message':'Incorrect note title or content',
-                        }),
+            return BaseResponse(
+                message='Incorrect note title or content',
                 status_code=status.HTTP_400_BAD_REQUEST
             )
     else:
-        return Response(
-                content=json.dumps({
-                    'message':'Unauthorized user request'
-                }),
+        return BaseResponse(
+                message='Unauthorized user request',
                 status_code=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -188,14 +178,14 @@ def UpdateNote(
 @router.get('/search')
 def search_notes(
     db: db_dependency,
-    request: Request,
+    request: AuthRequest,
     user_login: int = Query(None), 
     start_date: date = Query(None), 
     end_date: date = Query(None), 
     limit: int = Query(10, ge=1), 
     offset: int = Query(0)):
 
-    token = request.headers.get('access_token')
+    token = request.access_token
     
     isUserAuth = False
     userInfo = {}
@@ -246,20 +236,18 @@ def search_notes(
 @router.delete('/remove')
 def remove_note(
     db: db_dependency,
-    request: Request,
+    request: AuthRequest,
     note_id: int = Query(None),):
 
-    token = request.headers.get('access_token')
+    token = request.access_token
 
     if token:
         userInfo: dict
         try:
             userInfo = jwt.decode(token, os.getenv('SECRET_KEY'))
         except ExpiredSignatureError:
-            return Response(
-                content=json.dumps({
-                    'message':'Access token has expired, please log in again'
-                }),
+            return BaseResponse(
+                message='Access token has expired, please log in again',
                 status_code=status.HTTP_401_UNAUTHORIZED
             )
         if note_id:
@@ -272,30 +260,22 @@ def remove_note(
             if noteDelete:
                 db.delete(noteDelete)
                 db.commit()
-                return Response(
-                    content=json.dumps({
-                        'message':f'Note with id {note_id} have been deleted',
-                    }),
+                return BaseResponse(
+                    message=f'Note with id {note_id} have been deleted',
                     status_code=status.HTTP_202_ACCEPTED
                 )
             else:
-                return Response(
-                    content=json.dumps({
-                        'message':f'Note with id {note_id} not found',
-                    }),
+                return BaseResponse(
+                    message=f'Note with id {note_id} not found',
                     status_code=status.HTTP_404_NOT_FOUND
                 )
         else:
-            return Response(
-                    content=json.dumps({
-                        'message':'note id undefined',
-                    }),
+            return BaseResponse(
+                    message='note id undefined',
                     status_code=status.HTTP_404_NOT_FOUND
                 )
     else:
-        return Response(
-                content=json.dumps({
-                    'message':'Unauthorized user request'
-                }),
+        return BaseResponse(
+                message='Unauthorized user request',
                 status_code=status.HTTP_401_UNAUTHORIZED
             )
